@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🛩️ Sky Dodge — 16-BIT DX</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #0a0a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Press Start 2P', monospace;
+      overflow: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(1px 1px at 10% 20%, #fff 0%, transparent 100%),
+        radial-gradient(1px 1px at 30% 80%, #fff 0%, transparent 100%),
+        radial-gradient(1px 1px at 50% 10%, #fff 0%, transparent 100%),
+        radial-gradient(1px 1px at 70% 60%, #fff 0%, transparent 100%),
+        radial-gradient(1px 1px at 90% 35%, #fff 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #game-wrapper {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #titulo {
+      color: #ffdd00;
+      font-size: 1.1rem;
+      text-shadow: 3px 3px #c8000a, 6px 6px #7a0000;
+      letter-spacing: 2px;
+      animation: titulo-pulse 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes titulo-pulse {
+      from { opacity: 1; }
+      to   { opacity: 0.7; }
+    }
+
+    #hud {
+      display: flex;
+      gap: 30px;
+      color: #00ffcc;
+      font-size: 0.55rem;
+      text-shadow: 0 0 8px #00ffcc;
+      background: rgba(0,0,0,0.5);
+      padding: 8px 15px;
+      border-radius: 5px;
+      border: 1px solid #00ffcc;
+    }
+
+    #gameCanvas {
+      display: block;
+      border: 4px solid #ffdd00;
+      box-shadow:
+        0 0 0 2px #c8000a,
+        0 0 20px #ffdd0066,
+        0 0 50px #00ffcc33;
+      image-rendering: pixelated;
+      cursor: none;
+      border-radius: 4px;
+    }
+
+    #controles {
+      color: #aaaaff;
+      font-size: 0.45rem;
+      text-align: center;
+      line-height: 2;
+      background: rgba(0,0,0,0.5);
+      padding: 5px 10px;
+      border-radius: 5px;
+    }
+
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      z-index: 10;
+    }
+
+    #overlay h2 {
+      color: #ff3344;
+      font-size: 1.2rem;
+      text-shadow: 3px 3px #800000;
+      animation: titulo-pulse 0.8s infinite alternate;
+    }
+
+    #overlay p {
+      color: #ffdd00;
+      font-size: 0.55rem;
+      line-height: 2.2;
+      text-align: center;
+    }
+
+    #overlay button {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.6rem;
+      padding: 12px 24px;
+      background: #ffdd00;
+      border: none;
+      color: #000;
+      cursor: pointer;
+      box-shadow: 4px 4px 0 #c8000a;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    #overlay button:hover {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #c8000a;
+    }
+
+    #overlay button:active {
+      transform: translate(4px, 4px);
+      box-shadow: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <div id="titulo">✈ SKY DODGE DX ✈</div>
+
+  <div id="hud">
+    <span>SCORE: <span id="scoreDisplay">0</span></span>
+    <span>NIVEL: <span id="nivelDisplay">1</span></span>
+    <span>VIDAS: <span id="vidasDisplay">❤️❤️❤️</span></span>
+    <span>RÉCORD: <span id="recordDisplay">0</span></span>
+  </div>
+
+  <canvas id="gameCanvas" width="600" height="350"></canvas>
+
+  <div id="controles">
+    ▲ / W — SUBIR &nbsp;&nbsp;&nbsp; ▼ / S — BAJAR &nbsp;&nbsp;&nbsp; ESPACIO — PAUSA
+  </div>
+</div>
+
+<div id="overlay">
+  <h2 id="overlayTitle">SKY DODGE</h2>
+  <p id="overlayMsg">
+    Pilota tu avión y evita las bandadas de pájaros.<br/>
+    Sobrevive el ciclo de día y noche.<br/>
+    <br/>Tienes 3 vidas. ¡Buena suerte, piloto!
+  </p>
+  <button id="btnStart" onclick="iniciarJuego()">▶ JUGAR</button>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+
+let estadoJuego = "inicio";
+let jugador = {};
+let pajaros  = [];
+let nubes    = [];
+let estrellas = [];
+let montanas = [];
+let particulas = [];
+
+let puntaje    = 0;
+let record     = 0;
+let vidas      = 3;
+let nivel      = 1;
+let frameCount = 0;
+let velocidadBase = 2.5;
+let cicloDiaNoche = 0; // 0 = Día, 1 = Noche oscura
+
+let teclas = { arriba: false, abajo: false };
+let invulnerable = 0;
+
+// Inicialización de entorno estático
+function initEntorno() {
+  // Generar estrellas para la noche
+  estrellas = [];
+  for(let i=0; i<40; i++) {
+    estrellas.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      tam: Math.random() * 2,
+      brillo: Math.random()
+    });
+  }
+  // Generar montañas para parallax
+  montanas = [];
+  for(let i=0; i<3; i++) {
+    montanas.push({
+      x: i * 300,
+      y: canvas.height - 40 - Math.random()*40,
+      ancho: 350 + Math.random()*100
+    });
+  }
+}
+
+function iniciarJuego() {
+  document.getElementById('overlay').style.display = 'none';
+  puntaje    = 0;
+  vidas      = 3;
+  nivel      = 1;
+  frameCount = 0;
+  velocidadBase = 2.5;
+  pajaros    = [];
+  nubes      = [];
+  particulas = [];
+  invulnerable = 0;
+  cicloDiaNoche = 0;
+
+  initEntorno();
+
+  jugador = {
+    x: 90,
+    y: 175,
+    ancho: 56,
+    alto: 26,
+    velocidadY: 0,
+    gravedad: 0.18,
+    maxVelY: 5,
+    inclinacion: 0
+  };
+
+  estadoJuego = "jugando";
+  actualizarHUD();
+  gameLoop();
+}
+
+function gameLoop() {
+  if (estadoJuego !== "jugando") return;
+  actualizarJuego();
+  dibujarJuego();
+  requestAnimationFrame(gameLoop);
+}
+
+function actualizarJuego() {
+  frameCount++;
+
+  // --- Ciclo Día/Noche (Transición suave usando Seno) ---
+  cicloDiaNoche = (Math.sin(frameCount * 0.002) + 1) / 2;
+
+  // --- Progresión del juego ---
+  if (frameCount % 300 === 0) {
+    nivel++;
+    velocidadBase += 0.4;
+    actualizarHUD();
+  }
+  if (frameCount % 30 === 0) {
+    puntaje += nivel;
+    actualizarHUD();
+  }
+
+  // --- Físicas del Avión ---
+  if (teclas.arriba) {
+    jugador.velocidadY -= 0.6;
+  } else if (teclas.abajo) {
+    jugador.velocidadY += 0.5;
+  } else {
+    jugador.velocidadY += jugador.gravedad;
+  }
+
+  if (jugador.velocidadY > jugador.maxVelY)  jugador.velocidadY =  jugador.maxVelY;
+  if (jugador.velocidadY < -jugador.maxVelY) jugador.velocidadY = -jugador.maxVelY;
+
+  // Inclinación visual basada en la velocidad vertical
+  jugador.inclinacion = jugador.velocidadY * 0.05;
+
+  jugador.y += jugador.velocidadY;
+
+  if (jugador.y < 0) {
+    jugador.y = 0;
+    jugador.velocidadY = 1;
+  } else if (jugador.y + jugador.alto > canvas.height) {
+    jugador.y = canvas.height - jugador.alto;
+    jugador.velocidadY = -1;
+  }
+
+  if (invulnerable > 0) invulnerable--;
+
+  // --- Entorno ---
+  if (frameCount % 60 === 0) generarNube();
+  
+  let intervaloPajaros = Math.max(20, 90 - (nivel * 10));
+  if (frameCount % intervaloPajaros === 0) {
+    // 30% de probabilidad de generar una formación estructurada
+    if(Math.random() < 0.3 && nivel > 1) {
+      generarFormacionPajaros();
+    } else {
+      generarPajaro(canvas.width + 20, 30 + Math.random() * (canvas.height - 80));
+    }
+  }
+
+  // Mover nubes
+  nubes.forEach(n => { n.x -= n.velocidad; });
+  nubes = nubes.filter(n => n.x + n.ancho > -20);
+
+  // Mover montañas (Parallax)
+  montanas.forEach(m => {
+    m.x -= velocidadBase * 0.2; // Se mueven más lento
+    if (m.x + m.ancho < 0) {
+      m.x = canvas.width + Math.random()*50;
+    }
+  });
+
+  // Mover pájaros
+  pajaros.forEach(p => {
+    p.x -= p.velocidad;
+    p.alaTimer++;
+    if (p.alaTimer > 6) {
+      p.alaArriba = !p.alaArriba;
+      p.alaTimer = 0;
+    }
+    if (p.ondaY) {
+      p.y += Math.sin(frameCount * 0.08 + p.faseOnda) * 1.2;
+    }
+  });
+  pajaros = pajaros.filter(p => p.x + p.ancho > -20);
+
+  // Mover partículas
+  particulas.forEach(part => {
+    part.x += part.vx;
+    part.y += part.vy;
+    part.vy += 0.1;
+    part.vida--;
+    part.alfa = part.vida / part.vidaMax;
+  });
+  particulas = particulas.filter(p => p.vida > 0);
+
+  if (invulnerable === 0) detectarColisiones();
+}
+
+function generarPajaro(startX, startY, extraVel = 0) {
+  let tipo, color1, color2, tamano;
+  let aleatorio = Math.random();
+
+  if (aleatorio < 0.5) {
+    tipo   = "pequeno"; color1 = "#333333"; color2 = "#555555"; tamano = 16;
+  } else if (aleatorio < 0.85) {
+    tipo   = "mediano"; color1 = "#8B4513"; color2 = "#D2691E"; tamano = 22;
+  } else {
+    tipo   = "grande"; color1 = "#1a1a6e"; color2 = "#4444cc"; tamano = 30;
+  }
+
+  pajaros.push({
+    x: startX,
+    y: startY,
+    ancho: tamano,
+    alto: tamano * 0.55,
+    velocidad: velocidadBase + extraVel + (tipo === "grande" ? -0.5 : Math.random() * 1.5),
+    color1, color2, tipo,
+    alaArriba: true, alaTimer: Math.floor(Math.random()*6),
+    ondaY: Math.random() > 0.7,
+    faseOnda: Math.random() * Math.PI * 2
+  });
+}
+
+// Nueva función: Formaciones en V o diagonales
+function generarFormacionPajaros() {
+  let startX = canvas.width + 30;
+  let startY = 80 + Math.random() * (canvas.height - 160);
+  let esFormacionV = Math.random() > 0.5;
+  let velExtra = Math.random(); 
+
+  if (esFormacionV) {
+    // Punta
+    generarPajaro(startX, startY, velExtra);
+    // Alas de la V
+    generarPajaro(startX + 30, startY - 30, velExtra);
+    generarPajaro(startX + 30, startY + 30, velExtra);
+    generarPajaro(startX + 60, startY - 60, velExtra);
+    generarPajaro(startX + 60, startY + 60, velExtra);
+  } else {
+    // Línea recta descendente
+    for(let i=0; i<4; i++) {
+      generarPajaro(startX + (i*40), startY + (i*20), velExtra);
+    }
+  }
+}
+
+function generarNube() {
+  nubes.push({
+    x: canvas.width + 10,
+    y: 10 + Math.random() * (canvas.height - 100),
+    ancho: 60 + Math.random() * 100,
+    alto: 20 + Math.random() * 25,
+    velocidad: 0.5 + Math.random() * 0.5,
+    alfa: 0.3 + Math.random() * 0.4
+  });
+}
+
+function detectarColisiones() {
+  let margenX = 10; 
+  let margenY = 6; 
+
+  pajaros.forEach((p, i) => {
+    let colX = jugador.x + margenX < p.x + p.ancho &&
+               jugador.x + jugador.ancho - margenX > p.x;
+    let colY = jugador.y + margenY < p.y + p.alto &&
+               jugador.y + jugador.alto - margenY > p.y;
+
+    if (colX && colY) {
+      crearParticulas(p.x, p.y);
+      pajaros.splice(i, 1);
+      perderVida();
+    }
+  });
+}
+
+function perderVida() {
+  vidas--;
+  invulnerable = 120; // 2 segundos de protección
+  actualizarHUD();
+  if (vidas <= 0) terminarJuego();
+}
+
+function crearParticulas(x, y) {
+  let colores = ["#ff4444", "#ffaa00", "#ffffff", "#ff8800"];
+  for (let i = 0; i < 20; i++) {
+    let angulo = (i / 20) * Math.PI * 2;
+    let fuerza = 2 + Math.random() * 3;
+    particulas.push({
+      x, y,
+      vx: Math.cos(angulo) * fuerza,
+      vy: Math.sin(angulo) * fuerza,
+      color: colores[Math.floor(Math.random() * colores.length)],
+      vida: 30 + Math.random() * 20,
+      vidaMax: 50,
+      alfa: 1,
+      radio: 2 + Math.random() * 3
+    });
+  }
+}
+
+function terminarJuego() {
+  estadoJuego = "gameOver";
+  if (puntaje > record) record = puntaje;
+
+  let overlay = document.getElementById('overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('overlayTitle').textContent = '💥 GAME OVER';
+  document.getElementById('overlayMsg').innerHTML =
+    `SCORE: ${puntaje}<br/>RÉCORD: ${record}<br/>NIVEL ALCANZADO: ${nivel}<br/><br/>¡Vuelve al cielo, piloto!`;
+  document.getElementById('btnStart').textContent = '▶ REINTENTAR';
+  dibujarJuego();
+}
+
+function dibujarJuego() {
+  // 1. Cielo base (Día)
+  let gradDia = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradDia.addColorStop(0,   '#3a8adb'); 
+  gradDia.addColorStop(1,   '#87CEEB'); 
+  ctx.fillStyle = gradDia;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 2. Transición Día a Noche (Capa superpuesta oscura)
+  ctx.fillStyle = `rgba(10, 10, 35, ${cicloDiaNoche * 0.85})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 3. Estrellas (solo visibles en la noche)
+  ctx.fillStyle = `rgba(255, 255, 255, ${cicloDiaNoche})`;
+  estrellas.forEach(e => {
+    // Parpadeo sutil
+    if(Math.random() > 0.95) e.brillo = Math.random();
+    ctx.globalAlpha = cicloDiaNoche * e.brillo;
+    ctx.fillRect(e.x, e.y, e.tam, e.tam);
+  });
+  ctx.globalAlpha = 1;
+
+  // 4. Astro (Sol o Luna dependiendo del ciclo)
+  dibujarAstro();
+
+  // 5. Montañas parallax
+  ctx.fillStyle = `rgb(${40 - cicloDiaNoche*20}, ${80 - cicloDiaNoche*60}, ${60 - cicloDiaNoche*40})`; // Oscurecer montañas de noche
+  montanas.forEach(m => {
+    ctx.beginPath();
+    ctx.moveTo(m.x, canvas.height);
+    ctx.lineTo(m.x + m.ancho/2, m.y);
+    ctx.lineTo(m.x + m.ancho, canvas.height);
+    ctx.fill();
+  });
+
+  // 6. Nubes (toman tinte nocturno)
+  nubes.forEach(n => dibujarNube(n));
+
+  // 7. Pájaros
+  pajaros.forEach(p => dibujarPajaro(p));
+
+  // 8. Avión
+  dibujarAvion();
+
+  // 9. Partículas
+  particulas.forEach(part => {
+    ctx.save();
+    ctx.globalAlpha = part.alfa;
+    ctx.fillStyle   = part.color;
+    ctx.beginPath();
+    ctx.arc(part.x, part.y, part.radio, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // 10. Pausa
+  if (estadoJuego === "pausa") {
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#ffdd00";
+    ctx.font = "bold 14px 'Press Start 2P'";
+    ctx.textAlign = "center";
+    ctx.fillText("⏸ PAUSA", canvas.width / 2, canvas.height / 2);
+    ctx.font = "7px 'Press Start 2P'";
+    ctx.fillText("Presiona ESPACIO para continuar", canvas.width / 2, canvas.height / 2 + 28);
+    ctx.textAlign = "left";
+  }
+}
+
+function dibujarAstro() {
+  let cx = 500;
+  let cy = 60 + (cicloDiaNoche * 20); // Baja un poco en la noche
+
+  ctx.save();
+  if (cicloDiaNoche < 0.5) {
+    // SOL
+    let radio = 22;
+    let rotacion = frameCount * 0.01;
+    for (let i = 0; i < 8; i++) {
+      let angulo = (i / 8) * Math.PI * 2 + rotacion;
+      ctx.strokeStyle = `rgba(255, 230, 100, ${1 - cicloDiaNoche*2})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angulo) * (radio + 4), cy + Math.sin(angulo) * (radio + 4));
+      ctx.lineTo(cx + Math.cos(angulo) * (radio + 14), cy + Math.sin(angulo) * (radio + 14));
+      ctx.stroke();
+    }
+    ctx.fillStyle = `rgba(255, 224, 64, ${1 - cicloDiaNoche*2})`;
+    ctx.beginPath(); ctx.arc(cx, cy, radio, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // LUNA
+    ctx.fillStyle = "#f0f0f5";
+    ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI * 2); ctx.fill();
+    // Cráteres
+    ctx.fillStyle = "#d0d0d8";
+    ctx.beginPath(); ctx.arc(cx - 5, cy - 8, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 8, cy + 4, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx - 4, cy + 10, 5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function dibujarAvion() {
+  if (invulnerable > 0 && Math.floor(invulnerable / 6) % 2 === 0) return;
+
+  ctx.save();
+  
+  // Trasladar al centro del avión para rotarlo
+  ctx.translate(jugador.x + jugador.ancho/2, jugador.y + jugador.alto/2);
+  ctx.rotate(jugador.inclinacion);
+
+  let x = -jugador.ancho/2;
+  let y = -jugador.alto/2;
+  let a = jugador.ancho;
+  let h = jugador.alto;
+
+  // Fuego del propulsor (Cola)
+  let llamaLen = 8 + Math.random() * 4;
+  ctx.fillStyle = Math.random() > 0.5 ? "#ff8800" : "#ffcc00";
+  ctx.beginPath();
+  ctx.moveTo(x + 5, y + h - 8);
+  ctx.lineTo(x - llamaLen, y + h - 5);
+  ctx.lineTo(x + 5, y + h - 2);
+  ctx.fill();
+
+  // Cuerpo
+  ctx.fillStyle = "#c0c8e0";
+  ctx.fillRect(x + 8, y + 6, a - 20, h - 12);
+
+  // Nariz
+  ctx.fillStyle = "#e0e8f8";
+  ctx.beginPath();
+  ctx.moveTo(x + a - 12, y + 6);
+  ctx.lineTo(x + a, y + h/2);
+  ctx.lineTo(x + a - 12, y + h - 6);
+  ctx.fill();
+
+  // Cola vertical
+  ctx.fillStyle = "#6677aa";
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + 6);
+  ctx.lineTo(x + 14, y);
+  ctx.lineTo(x + 14, y + 6);
+  ctx.fill();
+
+  // Ala principal oscura (atrás)
+  ctx.fillStyle = "#7788aa";
+  ctx.beginPath();
+  ctx.moveTo(x + 20, y - 2);
+  ctx.lineTo(x + 35, y - 2);
+  ctx.lineTo(x + 25, y + h/2);
+  ctx.fill();
+
+  // Ala principal clara (frente)
+  ctx.fillStyle = "#99aacc";
+  ctx.beginPath();
+  ctx.moveTo(x + 16, y + h/2);
+  ctx.lineTo(x + 30, y + h + 4);
+  ctx.lineTo(x + 42, y + h + 4);
+  ctx.lineTo(x + 28, y + h/2);
+  ctx.fill();
+
+  // Cabina
+  ctx.fillStyle = "#44bbff";
+  ctx.beginPath();
+  ctx.moveTo(x + a - 25, y + 6);
+  ctx.lineTo(x + a - 15, y + 6);
+  ctx.lineTo(x + a - 12, y + h/2);
+  ctx.lineTo(x + a - 25, y + h/2);
+  ctx.fill();
+
+  // Hélice frontal animada
+  ctx.fillStyle = "#333";
+  ctx.fillRect(x + a, y + h/2 - 2, 4, 4); // Eje
+  
+  ctx.fillStyle = "rgba(200, 200, 200, 0.6)";
+  let heliceAlto = 14 + Math.sin(frameCount * 0.8) * 10;
+  ctx.fillRect(x + a + 2, y + h/2 - heliceAlto/2, 2, heliceAlto);
+
+  ctx.restore();
+}
+
+function dibujarPajaro(p) {
+  ctx.save();
+  let mx = p.x + p.ancho / 2;
+  let my = p.y + p.alto / 2;
+
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(mx, my + p.alto / 2 + 2, p.ancho / 2, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = p.color1;
+  ctx.beginPath();
+  ctx.ellipse(mx, my, p.ancho / 3, p.alto / 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = p.color2;
+  ctx.beginPath();
+  ctx.arc(mx + p.ancho / 3, my - p.alto / 6, p.alto / 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#ffcc00";
+  ctx.beginPath();
+  ctx.moveTo(mx + p.ancho / 3 + p.alto / 3, my - p.alto / 6);
+  ctx.lineTo(mx + p.ancho / 2 + 4, my - p.alto / 6 + 2);
+  ctx.lineTo(mx + p.ancho / 3 + p.alto / 3, my - p.alto / 6 + 4);
+  ctx.fill();
+
+  let alaOffsetY = p.alaArriba ? -p.alto * 0.7 : p.alto * 0.3;
+  ctx.fillStyle = p.color2;
+  ctx.beginPath();
+  ctx.moveTo(mx - 2, my);
+  ctx.quadraticCurveTo(mx - p.ancho / 2, my + alaOffsetY, mx - p.ancho * 0.7, my + alaOffsetY * 0.4);
+  ctx.quadraticCurveTo(mx - p.ancho / 3, my, mx, my);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(mx + 2, my);
+  ctx.quadraticCurveTo(mx + p.ancho / 2, my + alaOffsetY, mx + p.ancho * 0.6, my + alaOffsetY * 0.4);
+  ctx.quadraticCurveTo(mx + p.ancho / 3, my, mx, my);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function dibujarNube(n) {
+  ctx.save();
+  // Tintar nubes de noche
+  let tinteNoche = 255 - (cicloDiaNoche * 100);
+  ctx.fillStyle = `rgba(${tinteNoche}, ${tinteNoche}, ${tinteNoche + 20}, ${n.alfa})`;
+
+  let cx = n.x, cy = n.y, rx = n.ancho / 2, ry = n.alto / 2;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.5, ry * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + rx * 0.4, cy - ry * 0.3, rx * 0.5, ry * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx - rx * 0.4, cy - ry * 0.1, rx * 0.4, ry * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + rx * 0.8, cy + ry * 0.2, rx * 0.3, ry * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function actualizarHUD() {
+  document.getElementById('scoreDisplay').textContent  = puntaje;
+  document.getElementById('nivelDisplay').textContent  = nivel;
+  document.getElementById('recordDisplay').textContent = record;
+
+  let corazones = "🖤🖤🖤";
+  if (vidas === 3) corazones = "❤️❤️❤️";
+  else if (vidas === 2) corazones = "❤️❤️🖤";
+  else if (vidas === 1) corazones = "❤️🖤🖤";
+  document.getElementById('vidasDisplay').textContent = corazones;
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.code === "ArrowUp" || e.code === "KeyW") { teclas.arriba = true; e.preventDefault(); }
+  if (e.code === "ArrowDown" || e.code === "KeyS") { teclas.abajo = true; e.preventDefault(); }
+  if (e.code === "Space") {
+    if (estadoJuego === "jugando") {
+      estadoJuego = "pausa"; dibujarJuego();
+    } else if (estadoJuego === "pausa") {
+      estadoJuego = "jugando"; gameLoop();
+    }
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', function(e) {
+  if (e.code === "ArrowUp" || e.code === "KeyW") teclas.arriba = false;
+  if (e.code === "ArrowDown" || e.code === "KeyS") teclas.abajo = false;
+});
+
+canvas.addEventListener('touchstart', function(e) {
+  let tocY = e.touches[0].clientY - canvas.getBoundingClientRect().top;
+  if (tocY < canvas.height / 2) teclas.arriba = true; else teclas.abajo = true;
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchend', function(e) {
+  teclas.arriba = false; teclas.abajo = false; e.preventDefault();
+}, { passive: false });
+
+(function pantallaInicial() {
+  initEntorno();
+  dibujarJuego();
+})();
+</script>
+</body>
+</html>
